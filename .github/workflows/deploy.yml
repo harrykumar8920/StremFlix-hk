@@ -7,23 +7,21 @@ on:
 
 jobs:
   deploy:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Copy to VM
-        shell: powershell
         run: |
-          pscp.exe -batch -pw "Admin@1234567" index.html admin123@20.219.15.134:/tmp/
+          sudo apt-get install -y sshpass
+          sshpass -p "Admin@1234567" scp -o StrictHostKeyChecking=no index.html admin123@20.219.15.134:/tmp/
 
       - name: Deploy to Nginx
-        shell: powershell
         run: |
-          plink.exe -batch -pw "Admin@1234567" admin123@20.219.15.134 "sudo cp /tmp/index.html /var/www/html/ && sudo chmod 644 /var/www/html/index.html && sudo systemctl reload nginx"
+          sshpass -p "Admin@1234567" ssh -o StrictHostKeyChecking=no admin123@20.219.15.134 "sudo cp /tmp/index.html /var/www/html/ && sudo chmod 644 /var/www/html/index.html && sudo systemctl reload nginx"
 
       - name: Verify
-        shell: powershell
         run: |
-          plink.exe -batch -pw "Admin@1234567" admin123@20.219.15.134 "ls -lh /var/www/html/index.html"
+          sshpass -p "Admin@1234567" ssh -o StrictHostKeyChecking=no admin123@20.219.15.134 "ls -lh /var/www/html/index.html"
