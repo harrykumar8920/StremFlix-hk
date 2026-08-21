@@ -10,18 +10,23 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Copy to VM
+      - name: Install Nginx and Deploy
         run: |
           sudo apt-get install -y sshpass
+
+          # Install Nginx on VM
+          sshpass -p "Admin@1234567" ssh -o StrictHostKeyChecking=no admin123@20.219.15.134 "sudo apt-get update && sudo apt-get install -y nginx && sudo systemctl start nginx && sudo systemctl enable nginx"
+
+          # Create web directory if not exists
+          sshpass -p "Admin@1234567" ssh -o StrictHostKeyChecking=no admin123@20.219.15.134 "sudo mkdir -p /var/www/html"
+
+          # Copy file
           sshpass -p "Admin@1234567" scp -o StrictHostKeyChecking=no index.html admin123@20.219.15.134:/tmp/
 
-      - name: Deploy to Nginx
-        run: |
+          # Deploy
           sshpass -p "Admin@1234567" ssh -o StrictHostKeyChecking=no admin123@20.219.15.134 "sudo cp /tmp/index.html /var/www/html/ && sudo chmod 644 /var/www/html/index.html && sudo systemctl reload nginx"
 
-      - name: Verify
-        run: |
+          # Verify
           sshpass -p "Admin@1234567" ssh -o StrictHostKeyChecking=no admin123@20.219.15.134 "ls -lh /var/www/html/index.html"
