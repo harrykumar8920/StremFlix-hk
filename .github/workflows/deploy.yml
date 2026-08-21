@@ -7,7 +7,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: runner
+    runs-on: windows-latest # ✅ FIXED: 'runner' se 'windows-latest' kiya
 
     steps:
       - name: Checkout code
@@ -16,29 +16,107 @@ jobs:
       - name: Check PSCP
         shell: powershell
         run: |
-          pscp.exe -V
-          plink.exe -V
+          # Check if pscp.exe exists
+          if (Get-Command pscp.exe -ErrorAction SilentlyContinue) {
+            pscp.exe -V
+          } else {
+            Write-Host "pscp.exe not found, installing..."
+            choco install putty -y
+          }
+
+          if (Get-Command plink.exe -ErrorAction SilentlyContinue) {
+            plink.exe -V
+          } else {
+            Write-Host "plink.exe not found, installing..."
+          }
 
       - name: Copy index.html to Azure VM
         shell: powershell
         run: |
+          # Check if index.html exists
+          if (-Not (Test-Path "index.html")) {
+            Write-Error "❌ index.html not found!"
+            exit 1
+          }
+
+          Write-Host "✅ Copying index.html to Azure VM..."
           pscp.exe -batch `
             -pw "Admin@1234567" `
+            -v `
             index.html `
             admin123@20.219.15.134:/tmp/index.html
+
+          Write-Host "✅ File copied successfully!"
 
       - name: Deploy to Nginx
         shell: powershell
         run: |
+          Write-Host "🚀 Deploying to Nginx..."
+
+          # Create a deployment script
+          $script = @"
+          set -e
+          echo "Deploying index.html to Nginx..."
+
+          # Backup existing file
+          if [ -f "/var/www/html/index.html" ]; then
+            sudo cp /var/www/html/index.html /var/www/html/index.html.backup
+            echo "✅ Backup created"
+          fi
+
+          # Copy new file
+          sudo cp /tmp/index.html /var/www/html/index.html
+          sudo chmod 644 /var/www/html/index.html
+          echo "✅ File copied"
+
+          # Test Nginx configuration
+          sudo nginx -t
+          echo "✅ Nginx config valid"
+
+          # Reload Nginx
+          sudo systemctl reload nginx
+          echo "✅ Nginx reloaded"
+
+          echo "✅ Deployment complete!"
+          "@
+
+          # Save script to temp file
+          $script | Out-File -FilePath "deploy.sh" -Encoding UTF8
+
+          # Execute using plink
           plink.exe -batch `
             -pw "Admin@1234567" `
             admin123@20.219.15.134 `
-            "sudo cp /tmp/index.html /var/www/html/index.html && sudo chmod 644 /var/www/html/index.html && sudo nginx -t && sudo systemctl reload nginx"
+            "bash -s" < deploy.sh
 
       - name: Verify deployment
         shell: powershell
         run: |
-          plink.exe -batch `
+          Write-Host "🔍 Verifying deployment..."
+
+          # Check file exists
+          $result = plink.exe -batch `
             -pw "Admin@1234567" `
             admin123@20.219.15.134 `
-            "ls -lh /var/www/html/index.html && sha256sum /var/www/html/index.html"
+            "ls -lh /var/www/html/index.html"
+
+          Write-Host $result
+
+          # Get file hash
+          $hash = plink.exe -batch `
+            -pw "Admin@1234567" `
+            admin123@20.219.15.134 `
+            "sha256sum /var/www/html/index.html | cut -d' ' -f1"
+
+          Write-Host "🔑 SHA256: $hash"
+
+          # Test HTTP response
+          Write-Host "🌐 Testing HTTP endpoint..."
+          $response = Invoke-WebRequest -Uri "http://20.219.15.134/" -UseBasicParsing -ErrorAction SilentlyContinue
+          if ($response.StatusCode -eq 200) {
+            Write-Host "✅ Website is accessible! Status: $($response.StatusCode)"
+            Write-Host "📄 Content preview:"
+            Write-Host $response.Content.Substring(0, [Math]::Min(200, $response.Content.Length))
+          } else {
+            Write-Host "⚠️ Status code: $($response.StatusCode)"
+          }
